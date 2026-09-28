@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en" class="govuk-template">
+<head>
+  <meta charset="utf-8">
+  <title>Chat test harness – CXone + Cognigy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0c0c">
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- GOV.UK Design System styles (look and feel only) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/govuk-frontend@5/dist/govuk/govuk-frontend.min.css">
+
+  <!-- Adaptive Cards renderer (Microsoft) + markdown support for TextBlocks -->
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/adaptivecards@3/dist/adaptivecards.min.js"></script>
+
+  <style>
+    /*
+      GDS Transport is licensed for use on service.gov.uk domains only.
+      This override keeps the harness on Arial. Delete it if you host this on a gov.uk service domain.
+    */
+    .govuk-template, .govuk-template body, .govuk-template body * { font-family: arial, sans-serif !important; }
+
+    /* ---------- Header (neutral, no crown/departmental branding) ---------- */
+    .th-header { background: #0b0c0c; border-bottom: 10px solid #1d70b8; color: #fff; }
+    .th-header__inner { display: flex; align-items: center; gap: 15px; padding: 12px 0 8px; }
+    .th-header__name { color: #fff; font-weight: 700; font-size: 1.5rem; text-decoration: none; }
+    .th-header__name:hover { text-decoration: underline; text-decoration-thickness: 3px; }
+    .th-header__name:focus { color: #0b0c0c; }
+
+    /* ---------- Chat container ---------- */
+    .chat { border: 1px solid #b1b4b6; background: #fff; margin-bottom: 30px; }
+    .chat__status { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+                    padding: 10px 15px; border-bottom: 1px solid #b1b4b6; background: #f3f2f1; }
+    .chat__status p { margin: 0; }
+    .chat__transcript { height: 460px; overflow-y: auto; padding: 20px 15px; scroll-behavior: smooth; }
+    .chat__transcript:focus { outline: 3px solid #ffdd00; outline-offset: -3px; }
+
+    .msg { display: flex; flex-direction: column; margin-bottom: 20px; max-width: 85%; }
+    .msg--agent { align-items: flex-start; margin-right: auto; }
+    .msg--customer { align-items: flex-end; margin-left: auto; }
+    .msg__author { font-size: 1rem; color: #505a5f; margin: 0 0 5px; }
+    .msg__bubble { padding: 12px 15px; font-size: 1.1875rem; line-height: 1.3157894737; word-wrap: break-word; overflow-wrap: anywhere; }
+    .msg--agent .msg__bubble { background: #f3f2f1; border-left: 5px solid #1d70b8; color: #0b0c0c; }
+    .msg--customer .msg__bubble { background: #1d70b8; color: #fff; }
+    .msg--customer .msg__bubble a { color: #fff; }
+    .msg__bubble p { margin: 0 0 10px; }
+    .msg__bubble p:last-child { margin-bottom: 0; }
+    .msg__meta { font-size: 0.875rem; color: #505a5f; margin-top: 4px; }
+    .msg--pending .msg__bubble { opacity: .75; }
+    .msg--wide { max-width: 100%; width: 100%; }
+    .msg--wide .msg__bubble { width: 100%; box-sizing: border-box; }
+
+    .sys { text-align: center; color: #505a5f; font-size: 1rem; margin: 0 0 20px; }
+    .sys::before, .sys::after { content: " — "; }
+
+    .quick-replies { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+    .quick-replies .govuk-button { margin-bottom: 0; }
+    .list-picker__title { font-weight: 700; margin-bottom: 5px !important; }
+    .rich-link { display: block; border: 1px solid #b1b4b6; background: #fff; margin-top: 5px; max-width: 360px; }
+    .rich-link img { display: block; width: 100%; height: auto; }
+    .rich-link span { display: block; padding: 10px; }
+
+    .xapp-launch { margin-top: 10px; }
+    .xapp-launch .govuk-button { margin-bottom: 0; }
+
+    .raw { margin: 10px 0 0; }
+    .raw pre { font-family: monospace !important; font-size: .8rem; white-space: pre-wrap; max-height: 260px; overflow: auto; background: #fff; border: 1px solid #b1b4b6; padding: 8px; color: #0b0c0c; }
+
+    /* Typing indicator */
+    .typing { padding: 0 15px 10px; color: #505a5f; font-size: 1rem; min-height: 1.5em; }
+    .typing__dots span { display: inline-block; width: 6px; height: 6px; margin-left: 3px; border-radius: 50%; background: #505a5f; animation: blink 1.4s infinite both; }
+    .typing__dots span:nth-child(2) { animation-delay: .2s; }
+    .typing__dots span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .typing__dots span { animation: none; } }
+
+    /* Composer */
+    .chat__composer { border-top: 1px solid #b1b4b6; padding: 15px; }
+    .chat__composer .govuk-form-group { margin-bottom: 15px; }
+    .chat__composer textarea { resize: vertical; min-height: 70px; }
+    .chat__actions { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+    .chat__actions .govuk-button { margin-bottom: 0; }
+
+    /* xApp panel */
+    .xapp { border: 1px solid #b1b4b6; border-top: 5px solid #1d70b8; margin-bottom: 30px; }
+    .xapp[hidden] { display: none; }
+    .xapp__bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 10px 15px; background: #f3f2f1; }
+    .xapp__bar h2 { margin: 0; }
+    .xapp__links { display: flex; gap: 20px; }
+    .xapp iframe { display: block; width: 100%; height: 640px; border: 0; background: #fff; }
+
+    /* ---------- Adaptive Cards → GOV.UK styling ---------- */
+    .ac-adaptiveCard { background: #fff !important; border: 1px solid #b1b4b6; padding: 15px !important; }
+    .ac-textBlock p { margin: 0; }
+    .ac-pushButton {
+      font-size: 1.1875rem !important; line-height: 1.1875 !important; font-weight: 400 !important;
+      background: #00703c !important; color: #fff !important; border: 2px solid transparent !important; border-radius: 0 !important;
+      box-shadow: 0 2px 0 #002d18; padding: 8px 10px 7px !important; cursor: pointer; margin-bottom: 4px; white-space: normal !important;
+    }
+    .ac-pushButton:hover { background: #005a30 !important; }
+    .ac-pushButton:focus { outline: 3px solid transparent; background: #ffdd00 !important; color: #0b0c0c !important; box-shadow: 0 2px 0 #0b0c0c; }
+    .ac-pushButton[disabled], .ac-pushButton[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+    .ac-input, .ac-textInput, .ac-numberInput, .ac-dateInput, .ac-timeInput, .ac-multichoiceInput select {
+      font-size: 1.1875rem !important; border: 2px solid #0b0c0c !important; border-radius: 0 !important; padding: 5px !important; box-sizing: border-box; min-height: 40px;
+    }
+    .ac-input:focus, .ac-textInput:focus { outline: 3px solid #ffdd00 !important; outline-offset: 0; box-shadow: inset 0 0 0 2px; }
+    .ac-input-container label, .ac-choiceSetInput-expanded label { font-size: 1.1875rem; }
+    .ac-card-submitted { opacity: .6; pointer-events: none; }
+
+    .demo-tag { margin-left: 10px; vertical-align: middle; }
+    .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 30px; }
+    .log pre { font-family: monospace !important; font-size: .8rem; max-height: 400px; overflow: auto; background: #f3f2f1; padding: 10px; white-space: pre-wrap; }
+  </style>
+</head>
+<body class="govuk-template__body">
+<script>document.body.className += ' js-enabled' + ('noModule' in HTMLScriptElement.prototype ? ' govuk-frontend-supported' : '');</script>
+
+<a href="#main-content" class="govuk-skip-link" data-module="govuk-skip-link">Skip to main content</a>
+
+<header class="th-header" role="banner">
+  <div class="govuk-width-container th-header__inner">
+    <a href="#" class="th-header__name" id="service-name">Chat test harness</a>
+  </div>
+</header>
+
+<div class="govuk-width-container">
+  <div class="govuk-phase-banner">
+    <p class="govuk-phase-banner__content">
+      <strong class="govuk-tag govuk-phase-banner__content__tag">Test</strong>
+      <span class="govuk-phase-banner__text">Custom front end for CXone Chat Web SDK → Cognigy. Not a live service.</span>
+    </p>
+  </div>
+
+  <a href="javascript:history.back()" class="govuk-back-link">Back</a>
+
+  <main class="govuk-main-wrapper" id="main-content" role="main">
+    <div class="govuk-grid-row">
+      <div class="govuk-grid-column-full">
+
+        <h1 class="govuk-heading-xl" id="page-title">Ask us online</h1>
+
+        <div class="govuk-notification-banner" role="alert" aria-labelledby="banner-title" id="banner" hidden>
+          <div class="govuk-notification-banner__header">
+            <h2 class="govuk-notification-banner__title" id="banner-title">Important</h2>
+          </div>
+          <div class="govuk-notification-banner__content">
+            <p class="govuk-notification-banner__heading" id="banner-text"></p>
+          </div>
+        </div>
+
+        <!-- ================= Settings ================= -->
+        <details class="govuk-details" id="settings">
+          <summary class="govuk-details__summary">
+            <span class="govuk-details__summary-text">Connection settings</span>
+          </summary>
+          <div class="govuk-details__text">
+            <form id="settings-form" novalidate>
+              <div class="settings-grid">
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-brandId">Brand ID</label>
+                  <input class="govuk-input govuk-input--width-10" id="cfg-brandId" name="brandId" inputmode="numeric" autocomplete="off">
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-channelId">Channel ID</label>
+                  <div class="govuk-hint">For example, chat_1234abcd-…</div>
+                  <input class="govuk-input" id="cfg-channelId" name="channelId" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-environment">Environment</label>
+                  <select class="govuk-select" id="cfg-environment" name="environment">
+                    <option>UK1</option><option>UK2</option><option>EU1</option><option>EU2</option>
+                    <option>NA1</option><option>NA2</option><option>AU1</option><option>AU2</option>
+                    <option>CA1</option><option>JP1</option><option>AE1</option><option>JO1</option>
+                    <option>KR1</option><option>ZA1</option>
+                    <option value="custom">Custom (enter host below)</option>
+                  </select>
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-customHost">Custom environment host</label>
+                  <div class="govuk-hint">Only used when Environment is Custom. The part after <code>channels-de-</code>, for example <code>uk3.nicecxone-sov2.uk</code></div>
+                  <input class="govuk-input" id="cfg-customHost" name="customHost" spellcheck="false" autocomplete="off">
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-customerName">Your name (sent to CXone)</label>
+                  <input class="govuk-input" id="cfg-customerName" name="customerName" autocomplete="name">
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-botName">Label for bot/agent messages</label>
+                  <input class="govuk-input" id="cfg-botName" name="botName">
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-title">Page heading</label>
+                  <input class="govuk-input" id="cfg-title" name="title">
+                </div>
+              </div>
+
+              <div class="govuk-form-group">
+                <label class="govuk-label" for="cfg-contactFields">Contact custom fields (JSON)</label>
+                <div class="govuk-hint">Set on the contact after the chat starts – useful for Cognigy routing. For example {"journey":"mtd-income-tax"}</div>
+                <textarea class="govuk-textarea" id="cfg-contactFields" name="contactFields" rows="2" spellcheck="false"></textarea>
+              </div>
+              <div class="govuk-form-group">
+                <label class="govuk-label" for="cfg-customerFields">Customer custom fields (JSON)</label>
+                <textarea class="govuk-textarea" id="cfg-customerFields" name="customerFields" rows="2" spellcheck="false"></textarea>
+              </div>
+
+              <div class="settings-grid">
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-xappPattern">xApp URL pattern (regular expression)</label>
+                  <div class="govuk-hint">Links matching this open in the embedded xApp panel</div>
+                  <input class="govuk-input" id="cfg-xappPattern" name="xappPattern" spellcheck="false">
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-submitMode">Adaptive Card submit sends</label>
+                  <select class="govuk-select" id="cfg-submitMode" name="submitMode">
+                    <option value="postback">Postback (data as JSON postback, label as text)</option>
+                    <option value="text">Text (data as JSON text message)</option>
+                  </select>
+                </div>
+                <div class="govuk-form-group">
+                  <label class="govuk-label" for="cfg-sdkVersion">SDK version</label>
+                  <input class="govuk-input govuk-input--width-10" id="cfg-sdkVersion" name="sdkVersion" spellcheck="false">
+                </div>
+              </div>
+
+              <div class="govuk-form-group">
+                <div class="govuk-checkboxes govuk-checkboxes--small" data-module="govuk-checkboxes">
+                  <div class="govuk-checkboxes__item">
+                    <input class="govuk-checkboxes__input" id="cfg-livechat" name="livechat" type="checkbox">
+                    <label class="govuk-label govuk-checkboxes__label" for="cfg-livechat">Channel is Live Chat (uses startChat / endChat)</label>
+                  </div>
+                  <div class="govuk-checkboxes__item">
+                    <input class="govuk-checkboxes__input" id="cfg-autoOpenXApp" name="autoOpenXApp" type="checkbox">
+                    <label class="govuk-label govuk-checkboxes__label" for="cfg-autoOpenXApp">Open xApps automatically when a link arrives</label>
+                  </div>
+                  <div class="govuk-checkboxes__item">
+                    <input class="govuk-checkboxes__input" id="cfg-showRaw" name="showRaw" type="checkbox">
+                    <label class="govuk-label govuk-checkboxes__label" for="cfg-showRaw">Show raw message JSON under each bot message</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="govuk-button-group">
+                <button type="submit" class="govuk-button" data-module="govuk-button">Save and connect</button>
+                <button type="button" class="govuk-button govuk-button--secondary" id="btn-new-session">Start a new session</button>
+                <button type="button" class="govuk-button govuk-button--secondary" id="btn-demo">Run offline demo</button>
+              </div>
+              <p class="govuk-body-s">Settings are saved in this browser. You can also pass them in the URL, for example
+                <code>?brandId=1234&amp;channelId=chat_xxx&amp;env=UK1</code>, or add <code>?demo=1</code> to test rendering without CXone.</p>
+            </form>
+          </div>
+        </details>
+
+        <!-- ================= Chat ================= -->
+        <div class="chat" id="chat">
+          <div class="chat__status">
+            <p class="govuk-body" id="status-text" aria-live="polite">Not connected</p>
+            <p class="govuk-body"><strong class="govuk-tag govuk-tag--grey" id="status-tag">Offline</strong></p>
+          </div>
+
+          <div class="chat__transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions" tabindex="0" aria-label="Chat transcript"></div>
+
+          <div class="typing" id="typing" aria-live="polite"></div>
+
+          <div class="chat__composer">
+            <div class="govuk-button-group" id="start-group" hidden>
+              <button type="button" class="govuk-button govuk-button--start" id="btn-start" data-module="govuk-button">
+                Start chat
+                <svg class="govuk-button__start-icon" xmlns="http://www.w3.org/2000/svg" width="17.5" height="19" viewBox="0 0 33 40" aria-hidden="true" focusable="false"><path fill="currentColor" d="M0 0h13l20 20-20 20H0l20-20z"/></svg>
+              </button>
+            </div>
+
+            <form id="composer" novalidate>
+              <div class="govuk-form-group">
+                <label class="govuk-label govuk-label--s" for="message">Enter a message</label>
+                <div class="govuk-hint" id="message-hint">Do not include personal or financial information like your National Insurance number or credit card details.</div>
+                <textarea class="govuk-textarea" id="message" name="message" rows="3" aria-describedby="message-hint" disabled></textarea>
+              </div>
+              <div class="chat__actions">
+                <button type="submit" class="govuk-button" id="btn-send" data-module="govuk-button" disabled>Send</button>
+                <label class="govuk-link" id="attach-label" hidden style="cursor:pointer">
+                  Attach a file<input type="file" id="attach" class="govuk-visually-hidden" multiple>
+                </label>
+                <a href="#" class="govuk-link" id="btn-end" hidden>End chat</a>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- ================= xApp panel ================= -->
+        <section class="xapp" id="xapp" hidden aria-labelledby="xapp-title">
+          <div class="xapp__bar">
+            <h2 class="govuk-heading-s" id="xapp-title">xApp</h2>
+            <div class="xapp__links">
+              <a href="#" class="govuk-link" id="xapp-newtab" target="_blank" rel="noopener">Open in new tab<span class="govuk-visually-hidden"> (opens in new tab)</span></a>
+              <a href="#" class="govuk-link" id="xapp-close">Close xApp</a>
+            </div>
+          </div>
+          <iframe id="xapp-frame" title="xApp" allow="camera; microphone; geolocation; clipboard-read; clipboard-write; payment"></iframe>
+        </section>
+
+        <!-- ================= Developer log ================= -->
+        <details class="govuk-details log">
+          <summary class="govuk-details__summary"><span class="govuk-details__summary-text">Event log (developer)</span></summary>
+          <div class="govuk-details__text">
+            <div class="govuk-button-group">
+              <button type="button" class="govuk-button govuk-button--secondary" id="log-copy">Copy log</button>
+              <button type="button" class="govuk-button govuk-button--secondary" id="log-clear">Clear log</button>
+            </div>
+            <pre id="log"></pre>
+          </div>
+        </details>
+
+        <p class="govuk-body"><a class="govuk-link" href="https://help.nicecxone.com/content/acd/digital/chatsdk/chatwebsdk.htm" target="_blank" rel="noopener">CXone Chat Web SDK documentation (opens in new tab)</a></p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<footer class="govuk-footer" role="contentinfo">
+  <div class="govuk-width-container">
+    <div class="govuk-footer__meta">
+      <div class="govuk-footer__meta-item govuk-footer__meta-item--grow">
+        <h2 class="govuk-visually-hidden">Support links</h2>
+        <p class="govuk-body-s govuk-!-margin-bottom-0">Test harness for NiCE CXone Chat Web SDK with Cognigy xApps and Adaptive Cards.</p>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script type="module">
+/* =====================================================================
+   Config
+   ===================================================================== */
+const DEFAULTS = {
+  brandId: '', channelId: '', environment: 'UK1', customHost: '',
+  customerName: '', botName: 'Digital assistant', title: 'Ask us online',
+  contactFields: '', customerFields: '',
+  xappPattern: 'app-session|xapp|/apps?/.*session|cognigy\\.ai/.*/app',
+  submitMode: 'postback', sdkVersion: '3.4.1',
+  livechat: true, autoOpenXApp: true, showRaw: false,
+};
+const LS = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+const CFG_KEY = 'cxone-harness-config';
+
+function loadConfig() {
+  let cfg = { ...DEFAULTS };
+  try { Object.assign(cfg, JSON.parse(LS.get(CFG_KEY) || '{}')); } catch {}
+  const q = new URLSearchParams(location.search);
+  const map = { brandId: 'brandId', channelId: 'channelId', env: 'environment', environment: 'environment',
+                name: 'customerName', title: 'title', sdk: 'sdkVersion', bot: 'botName', host: 'customHost' };
+  for (const [p, k] of Object.entries(map)) if (q.has(p)) cfg[k] = q.get(p);
+  if (q.has('livechat')) cfg.livechat = q.get('livechat') !== '0';
+  return cfg;
+}
+let cfg = loadConfig();
+
+const $ = (id) => document.getElementById(id);
+const form = $('settings-form');
+
+function fillForm() {
+  for (const [k, v] of Object.entries(cfg)) {
+    const el = form.elements[k];
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v ?? '';
+  }
+  $('page-title').textContent = cfg.title || DEFAULTS.title;
+  document.title = `${cfg.title || DEFAULTS.title} – chat test harness`;
+}
+function readForm() {
+  const out = { ...cfg };
+  for (const k of Object.keys(DEFAULTS)) {
+    const el = form.elements[k];
+    if (!el) continue;
+    out[k] = el.type === 'checkbox' ? el.checked : el.value.trim();
+  }
+  return out;
+}
+fillForm();
+
+/* =====================================================================
+   UI helpers
+   ===================================================================== */
+const transcript = $('transcript');
+const input = $('message');
+const logEl = $('log');
+const rendered = new Map(); // key -> element
+
+function log(label, data) {
+  let s;
+  try { s = typeof data === 'string' ? data : JSON.stringify(data, null, 2); } catch { s = String(data); }
+  if (s && s.length > 6000) s = s.slice(0, 6000) + '\n…(truncated)';
+  logEl.textContent += `[${new Date().toLocaleTimeString()}] ${label}${s ? '\n' + s : ''}\n\n`;
+  console.debug('[harness]', label, data);
+}
+
+function setStatus(text, tag = 'Offline', colour = 'grey') {
+  $('status-text').textContent = text;
+  const t = $('status-tag');
+  t.textContent = tag;
+  t.className = `govuk-tag govuk-tag--${colour}`;
+}
+function banner(text) {
+  $('banner').hidden = !text;
+  $('banner-text').textContent = text || '';
+}
+function setComposer(enabled) {
+  input.disabled = !enabled;
+  $('btn-send').disabled = !enabled;
+}
+function scrollDown() { transcript.scrollTop = transcript.scrollHeight; }
+
+function systemLine(text) {
+  const p = document.createElement('p');
+  p.className = 'sys';
+  p.textContent = text;
+  transcript.appendChild(p);
+  scrollDown();
+}
+
+let typingTimer;
+function showTyping(on, who) {
+  const el = $('typing');
+  clearTimeout(typingTimer);
+  if (!on) { el.innerHTML = ''; return; }
+  el.innerHTML = '';
+  const s = document.createElement('span');
+  s.textContent = `${who || cfg.botName} is typing`;
+  const dots = document.createElement('span');
+  dots.className = 'typing__dots';
+  dots.setAttribute('aria-hidden', 'true');
+  dots.innerHTML = '<span></span><span></span><span></span>';
+  el.append(s, dots);
+  typingTimer = setTimeout(() => showTyping(false), 30000);
+}
+
+/* ---------- xApp handling ---------- */
+function xappRegex() { try { return new RegExp(cfg.xappPattern, 'i'); } catch { return /app-session/i; } }
+function isXAppUrl(url) { return !!url && xappRegex().test(url); }
+
+function openXApp(url, title = 'xApp') {
+  const panel = $('xapp');
+  $('xapp-title').textContent = title;
+  $('xapp-newtab').href = url;
+  const frame = $('xapp-frame');
+  if (frame.src !== url) frame.src = url;
+  panel.hidden = false;
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  log('xApp opened', url);
+}
+$('xapp-close').addEventListener('click', (e) => {
+  e.preventDefault();
+  $('xapp').hidden = true;
+  $('xapp-frame').src = 'about:blank';
+  input.focus();
+});
+
+function xappButton(url, label = 'Open xApp') {
+  const wrap = document.createElement('div');
+  wrap.className = 'xapp-launch';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'govuk-button govuk-button--secondary';
+  b.textContent = label;
+  b.addEventListener('click', () => openXApp(url, label));
+  wrap.appendChild(b);
+  return wrap;
+}
+
+/* ---------- Text with links ---------- */
+const URL_RE = /((?:blob:)?https?:\/\/[^\s<>"')\]]+|blob:null\/[\w-]+)/g;
+function renderText(text, xappUrls) {
+  const frag = document.createDocumentFragment();
+  String(text).split(/\n{2,}/).forEach((para) => {
+    const p = document.createElement('p');
+    const lines = para.split('\n');
+    lines.forEach((line, i) => {
+      let last = 0;
+      line.replace(URL_RE, (m, url, idx) => {
+        p.appendChild(document.createTextNode(line.slice(last, idx)));
+        const a = document.createElement('a');
+        a.href = url; a.textContent = url; a.className = 'govuk-link';
+        a.target = '_blank'; a.rel = 'noopener';
+        if (isXAppUrl(url)) {
+          xappUrls.add(url);
+          a.addEventListener('click', (e) => { e.preventDefault(); openXApp(url); });
+        }
+        p.appendChild(a);
+        last = idx + m.length;
+      });
+      p.appendChild(document.createTextNode(line.slice(last)));
+      if (i < lines.length - 1) p.appendChild(document.createElement('br'));
+    });
+    frag.appendChild(p);
+  });
+  return frag;
+}
+
+/* ---------- Deep scanning (Cognigy payloads can be nested) ---------- */
+function tryJson(s) {
+  if (typeof s !== 'string') return null;
+  const t = s.trim();
+  if (!(t.startsWith('{') || t.startsWith('['))) return null;
+  try { return JSON.parse(t); } catch { return null; }
+}
+function findAdaptiveCard(obj, depth = 0) {
+  if (!obj || depth > 8) return null;
+  if (typeof obj === 'string') { const j = tryJson(obj); return j ? findAdaptiveCard(j, depth + 1) : null; }
+  if (typeof obj !== 'object') return null;
+  if (obj.type === 'AdaptiveCard' && (obj.body || obj.actions)) return obj;
+  for (const v of Object.values(obj)) { const f = findAdaptiveCard(v, depth + 1); if (f) return f; }
+  return null;
+}
+function findXAppUrls(obj, set = new Set(), depth = 0) {
+  if (!obj || depth > 8) return set;
+  if (typeof obj === 'string') { (obj.match(URL_RE) || []).forEach((u) => isXAppUrl(u) && set.add(u)); return set; }
+  if (typeof obj === 'object') Object.values(obj).forEach((v) => findXAppUrls(v, set, depth + 1));
+  return set;
+}
+
+/* ---------- Adaptive Cards ---------- */
+const AC = window.AdaptiveCards;
+if (AC && window.markdownit) {
+  const md = window.markdownit({ linkify: true, breaks: true });
+  AC.AdaptiveCard.onProcessMarkdown = (text, result) => { result.outputHtml = md.render(text); result.didProcess = true; };
+}
+const hostConfig = AC ? new AC.HostConfig({
+  fontFamily: 'arial, sans-serif',
+  spacing: { small: 5, default: 10, medium: 15, large: 20, extraLarge: 30, padding: 15 },
+  separator: { lineThickness: 1, lineColor: '#b1b4b6' },
+  supportsInteractivity: true,
+  fontSizes: { small: 14, default: 19, medium: 19, large: 24, extraLarge: 36 },
+  fontWeights: { lighter: 400, default: 400, bolder: 700 },
+  containerStyles: {
+    default: { backgroundColor: '#ffffff', foregroundColors: {
+      default: { default: '#0b0c0c', subtle: '#505a5f' }, accent: { default: '#1d70b8', subtle: '#1d70b8' },
+      good: { default: '#00703c', subtle: '#00703c' }, warning: { default: '#f47738', subtle: '#f47738' },
+      attention: { default: '#d4351c', subtle: '#d4351c' } } },
+    emphasis: { backgroundColor: '#f3f2f1', foregroundColors: { default: { default: '#0b0c0c', subtle: '#505a5f' } } },
+  },
+  actions: { maxActions: 10, spacing: 'default', buttonSpacing: 15, showCard: { actionMode: 'inline', inlineTopMargin: 15 },
+             actionsOrientation: 'horizontal', actionAlignment: 'left' },
+  inputs: { label: { requiredInputs: { suffix: ' (required)' }, optionalInputs: { suffix: ' (optional)' } } },
+}) : null;
+
+function renderAdaptiveCard(payload) {
+  const holder = document.createElement('div');
+  if (!AC) {
+    holder.appendChild(renderText('[Adaptive Card received – renderer failed to load. See raw JSON.]', new Set()));
+    return holder;
+  }
+  try {
+    const card = new AC.AdaptiveCard();
+    card.hostConfig = hostConfig;
+    card.parse(typeof payload === 'string' ? JSON.parse(payload) : payload);
+    card.onExecuteAction = async (action) => {
+      const type = action.getJsonTypeName();
+      log(`Adaptive Card action: ${type}`, { title: action.title, data: action.data, url: action.url });
+      if (type === 'Action.OpenUrl') {
+        if (isXAppUrl(action.url)) openXApp(action.url, action.title || 'xApp');
+        else window.open(action.url, '_blank', 'noopener');
+        return;
+      }
+      if (type === 'Action.Submit' || type === 'Action.Execute') {
+        const data = action.data ?? {};
+        const label = action.title || 'Submitted';
+        let ok;
+        if (data && typeof data === 'object' && typeof data.postback === 'string') {
+          ok = await sendPostback(data.postback, data.text || label);            // quick-reply style
+        } else if (cfg.submitMode === 'text') {
+          ok = await sendText(typeof data === 'string' ? data : JSON.stringify(data));
+        } else {
+          ok = await sendPostback(typeof data === 'string' ? data : JSON.stringify(data), label);
+        }
+        if (ok) holder.classList.add('ac-card-submitted');
+      }
+    };
+    holder.appendChild(card.render());
+  } catch (err) {
+    log('Adaptive Card render error', String(err));
+    holder.appendChild(renderText(`[Could not render Adaptive Card: ${err.message}]`, new Set()));
+  }
+  return holder;
+}
+
+function quickReplies(actions, onDone) {
+  const wrap = document.createElement('div');
+  wrap.className = 'quick-replies';
+  (actions || []).forEach((a) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'govuk-button govuk-button--secondary';
+    b.textContent = a.text;
+    if (a.description) b.title = a.description;
+    b.addEventListener('click', async () => {
+      const ok = await sendPostback(a.postback ?? a.text, a.text);
+      if (ok) { wrap.querySelectorAll('button').forEach((x) => (x.disabled = true)); onDone && onDone(); }
+    });
+    wrap.appendChild(b);
+  });
+  return wrap;
+}
+
+/* ---------- Message renderer (SDK Message / SentMessage shape) ---------- */
+function authorName(m) {
+  const u = m.authorUser;
+  if (u) return u.nickname || [u.firstName, u.surname].filter(Boolean).join(' ') || cfg.botName;
+  return cfg.botName;
+}
+
+function renderContent(m, bubble) {
+  const content = m.messageContent || {};
+  const payload = content.payload || {};
+  const type = content.type;
+  const xappUrls = new Set();
+  let wide = false;
+
+  switch (type) {
+    case 'TEXT': {
+      const text = payload.text ?? content.fallbackText ?? '';
+      const card = findAdaptiveCard(text);                 // bot sent AC JSON as text
+      if (card) { bubble.appendChild(renderAdaptiveCard(card)); wide = true; }
+      else if (text) bubble.appendChild(renderText(text, xappUrls));
+      break;
+    }
+    case 'QUICK_REPLIES':
+      bubble.appendChild(renderText(payload.text?.content ?? '', xappUrls));
+      bubble.appendChild(quickReplies(payload.actions));
+      break;
+    case 'LIST_PICKER': {
+      if (payload.title?.content) {
+        const t = document.createElement('p'); t.className = 'list-picker__title'; t.textContent = payload.title.content;
+        bubble.appendChild(t);
+      }
+      bubble.appendChild(renderText(payload.text?.content ?? '', xappUrls));
+      bubble.appendChild(quickReplies(payload.actions));
+      break;
+    }
+    case 'RICH_LINK': {
+      const url = payload.url;
+      if (isXAppUrl(url)) { xappUrls.add(url); bubble.appendChild(renderText(payload.title?.content || 'xApp', new Set())); break; }
+      const a = document.createElement('a');
+      a.className = 'rich-link govuk-link'; a.href = url; a.target = '_blank'; a.rel = 'noopener';
+      if (payload.media?.url) { const img = document.createElement('img'); img.src = payload.media.url; img.alt = ''; a.appendChild(img); }
+      const s = document.createElement('span'); s.textContent = payload.title?.content || url; a.appendChild(s);
+      bubble.appendChild(a);
+      break;
+    }
+    case 'ADAPTIVE_CARD':
+      bubble.appendChild(renderAdaptiveCard(findAdaptiveCard(payload) || payload));
+      wide = true;
+      break;
+    default: {
+      // PLUGIN / FORM / TIME_PICKER / unknown → look for an Adaptive Card or xApp link anywhere inside
+      const card = findAdaptiveCard(payload);
+      if (card) { bubble.appendChild(renderAdaptiveCard(card)); wide = true; }
+      const text = payload.text ?? content.fallbackText;
+      if (typeof text === 'string' && text && !tryJson(text)) bubble.appendChild(renderText(text, xappUrls));
+      if (!card && !text && !findXAppUrls(payload).size) {
+        bubble.appendChild(renderText(`[${type || 'Unknown'} message – not rendered. See raw JSON.]`, xappUrls));
+      }
+    }
+  }
+
+  // Attachments
+  (m.attachments || []).forEach((att) => {
+    const p = document.createElement('p');
+    if (/^image\//.test(att.mimeType || '')) {
+      const img = document.createElement('img'); img.src = att.url; img.alt = att.friendlyName || 'Image'; img.style.maxWidth = '100%';
+      p.appendChild(img);
+    } else {
+      const a = document.createElement('a'); a.href = att.url; a.className = 'govuk-link'; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = att.friendlyName || att.fileName || 'Attachment'; p.appendChild(a);
+    }
+    bubble.appendChild(p);
+  });
+
+  // Any xApp links in the whole message (text, postbacks, custom payloads)
+  findXAppUrls(content, xappUrls);
+  return { xappUrls, wide };
+}
+
+function upsertMessage(m, { pending = false, fromHistory = false } = {}) {
+  const key = m.idOnExternalPlatform || m.id || crypto.randomUUID();
+  const isCustomer = m.direction === 'inbound';
+  const existing = rendered.get(key);
+
+  if (existing) {
+    existing.classList.toggle('msg--pending', pending);
+    const meta = existing.querySelector('.msg__meta');
+    if (meta && isCustomer) meta.textContent = pending ? 'Sending…' : `Sent ${fmtTime(m.createdAt)}`;
+    if (!isCustomer && m._stream !== undefined) existing.querySelector('.msg__bubble').replaceChildren(renderText(m._stream, new Set()));
+    return existing;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${isCustomer ? 'msg--customer' : 'msg--agent'}${pending ? ' msg--pending' : ''}`;
+
+  const who = document.createElement('p');
+  who.className = isCustomer ? 'govuk-visually-hidden' : 'msg__author';
+  who.textContent = isCustomer ? 'You said:' : `${authorName(m)}`;
+  wrap.appendChild(who);
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg__bubble';
+  wrap.appendChild(bubble);
+
+  const { xappUrls, wide } = renderContent(m, bubble);
+  if (wide) wrap.classList.add('msg--wide');
+
+  xappUrls.forEach((url) => {
+    bubble.appendChild(xappButton(url));
+    if (cfg.autoOpenXApp && !fromHistory && !isCustomer) openXApp(url);
+  });
+
+  const meta = document.createElement('p');
+  meta.className = 'msg__meta';
+  meta.textContent = pending ? 'Sending…' : (isCustomer ? `Sent ${fmtTime(m.createdAt)}` : fmtTime(m.createdAt));
+  wrap.appendChild(meta);
+
+  if (cfg.showRaw && !isCustomer) {
+    const d = document.createElement('details');
+    d.className = 'govuk-details raw';
+    d.innerHTML = '<summary class="govuk-details__summary"><span class="govuk-details__summary-text">Raw JSON</span></summary>';
+    const pre = document.createElement('pre');
+    pre.textContent = JSON.stringify(m.messageContent, null, 2);
+    d.appendChild(pre);
+    wrap.appendChild(d);
+  }
+
+  rendered.set(key, wrap);
+  transcript.appendChild(wrap);
+  scrollDown();
+  return wrap;
+}
+function fmtTime(t) {
+  const d = t ? new Date(t) : new Date();
+  return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+/* =====================================================================
+   Transport: either the real SDK thread or the offline demo
+   ===================================================================== */
+let sdk = null, SDK = null, thread = null, mode = null, chatState = 'none';
+const offs = [];
+
+function localEcho(text, id) {
+  upsertMessage({ idOnExternalPlatform: id, direction: 'inbound', messageContent: { type: 'TEXT', payload: { text } }, createdAt: new Date().toISOString() }, { pending: true });
+}
+
+async function sendText(text) {
+  if (!thread || !text) return false;
+  const id = crypto.randomUUID();
+  localEcho(text, id);
+  try { await thread.sendTextMessage(text, { messageId: id }); log('sendTextMessage', text); return true; }
+  catch (e) { log('sendTextMessage failed', String(e)); banner(`Message not sent: ${e.message || e}`); return false; }
+}
+async function sendPostback(postback, text) {
+  if (!thread) return false;
+  const id = crypto.randomUUID();
+  localEcho(text, id);
+  try { await thread.sendPostbackMessage(String(postback), text, { messageId: id }); log('sendPostbackMessage', { postback, text }); return true; }
+  catch (e) { log('sendPostbackMessage failed', String(e)); banner(`Message not sent: ${e.message || e}`); return false; }
+}
+
+function setChatState(state) {
+  chatState = state;
+  const live = mode === 'demo' || cfg.livechat;
+  $('start-group').hidden = !(state === 'new' || state === 'closed');
+  $('btn-start').firstChild.textContent = state === 'closed' ? 'Start a new chat ' : 'Start chat ';
+  $('btn-end').hidden = !(state === 'open' && live);
+  setComposer(state === 'open');
+  if (state === 'open') setStatus(mode === 'demo' ? 'Offline demo – no CXone connection' : 'Connected', 'Connected', 'green');
+  if (state === 'new') setStatus('Ready to start a chat', 'Ready', 'blue');
+  if (state === 'closed') { setStatus('Chat ended', 'Ended', 'grey'); showTyping(false); }
+}
+
+/* ---------- Real SDK ---------- */
+async function loadSdk(version) {
+  const urls = [
+    `https://esm.sh/@nice-devone/nice-cxone-chat-web-sdk@${version}`,
+    `https://cdn.jsdelivr.net/npm/@nice-devone/nice-cxone-chat-web-sdk@${version}/+esm`,
+  ];
+  let lastErr;
+  for (const u of urls) {
+    try {
+      const mod = await import(u);
+      const lib = mod.ChatSdk ? mod : (mod.default && mod.default.ChatSdk ? mod.default : mod);
+      if (!lib.ChatSdk) throw new Error('ChatSdk export not found');
+      log('SDK loaded', u);
+      return lib;
+    } catch (e) { lastErr = e; log('SDK load failed', `${u}: ${e}`); }
+  }
+  throw lastErr;
+}
+
+/* Same host pattern the SDK uses for built-in regions:
+   channels-de-<host>, chat-gw-de-<host>, digital-oauth-de-<host>.
+   Accepts "uk3.nicecxone-sov2.uk" or a pasted URL like "https://channels-de-uk3.nicecxone-sov2.uk/". */
+function customEndpoints(raw) {
+  const host = String(raw || '').trim().replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '')
+    .replace(/^(channels|chat-gw|digital-oauth)-de-/i, '').toLowerCase();
+  return {
+    name: host,
+    chat: `https://channels-de-${host}`,
+    gateway: `wss://chat-gw-de-${host}`,
+    authorize: `https://digital-oauth-de-${host}`,
+  };
+}
+
+function threadKey() { return `cxone-harness-thread-${cfg.channelId}`; }
+function customerKey() { return `cxone-harness-customer-${cfg.brandId}`; }
+function parseJsonField(s, label) {
+  if (!s) return null;
+  try { return JSON.parse(s); } catch { banner(`${label} is not valid JSON – ignored.`); return null; }
+}
+
+async function connectLive() {
+  teardown();
+  mode = 'live';
+  $('demo-tag')?.remove();
+  if (cfg.environment === 'custom' && !cfg.customHost) {
+    setStatus('Enter a custom environment host in Connection settings');
+    $('settings').open = true;
+    return;
+  }
+  if (cfg.environment === 'custom') log('custom environment', customEndpoints(cfg.customHost));
+  if (!cfg.brandId || !cfg.channelId) {
+    setStatus('Enter a Brand ID and Channel ID in Connection settings');
+    $('settings').open = true;
+    return;
+  }
+  banner('');
+  setStatus('Loading SDK…', 'Connecting', 'yellow');
+  try { SDK = SDK || await loadSdk(cfg.sdkVersion); }
+  catch (e) { banner(`Could not load the CXone Chat Web SDK: ${e.message || e}`); setStatus('SDK failed to load', 'Error', 'red'); return; }
+
+  const customerId = LS.get(customerKey()) || crypto.randomUUID();
+  try {
+    sdk = new SDK.ChatSdk({
+      brandId: Number(cfg.brandId),
+      channelId: cfg.channelId,
+      customerId,
+      customerName: cfg.customerName || undefined,
+      environment: cfg.environment,
+      customEnvironment: cfg.environment === 'custom' ? customEndpoints(cfg.customHost) : undefined,
+      isLivechat: !!cfg.livechat,
+      securedSession: SDK.SecureSessions?.ANONYMOUS,
+      storage: null,
+      cacheStorage: null,
+      appName: 'CXone Cognigy test harness',
+      onError: (err) => { log('SDK error', String(err?.message || err)); },
+      onRawEvent: (evt) => log('raw event', evt),
+    });
+    setStatus('Connecting to CXone…', 'Connecting', 'yellow');
+    await sdk.connect();
+  } catch (e) {
+    log('connect failed', String(e));
+    banner(`Could not connect to CXone: ${e.message || e}. Check the Brand ID, Channel ID and environment, and that this page's origin is allowed on the chat channel.`);
+    setStatus('Connection failed', 'Error', 'red');
+    return;
+  }
+
+  const cust = sdk.getCustomer();
+  LS.set(customerKey(), cust?.getId?.() || customerId);
+  if (cfg.customerName) cust?.setName?.(cfg.customerName);
+  const custFields = parseJsonField(cfg.customerFields, 'Customer custom fields');
+  if (custFields) { try { await cust?.setCustomFields?.(custFields); } catch (e) { log('customer setCustomFields failed', String(e)); } }
+
+  try {
+    const info = await sdk.getChannelInfo();
+    log('channel info', info);
+    if (typeof info?.isLiveChat === 'boolean' && info.isLiveChat !== !!cfg.livechat) {
+      banner(`Channel reports isLiveChat=${info.isLiveChat} but settings say ${!!cfg.livechat}. Update the “Channel is Live Chat” setting.`);
+    }
+    $('attach-label').hidden = !info?.settings?.fileRestrictions?.isAttachmentsEnabled;
+  } catch (e) { log('getChannelInfo failed', String(e)); }
+
+  let threadId = LS.get(threadKey());
+  const fresh = !threadId;
+  if (!threadId) threadId = crypto.randomUUID();
+  LS.set(threadKey(), threadId);
+  thread = sdk.getThread(threadId);
+  attachLiveListeners();
+
+  if (fresh) { setChatState(cfg.livechat ? 'new' : 'open'); return; }
+
+  try {
+    setStatus('Recovering previous chat…', 'Connecting', 'yellow');
+    const rec = await thread.recover();
+    log('thread recovered', { contact: rec?.contact, count: rec?.messages?.length });
+    (rec.messages || []).slice().reverse().forEach((m) => upsertMessage(m, { fromHistory: true }));
+    const status = rec?.contact?.status;
+    if (cfg.livechat && status === 'closed') setChatState('closed');
+    else setChatState('open');
+  } catch (e) {
+    log('recover failed (treated as new thread)', String(e));
+    setChatState(cfg.livechat ? 'new' : 'open');
+  }
+}
+
+function attachLiveListeners() {
+  const E = SDK.ChatEvent;
+  const on = (target, evt, fn) => { if (evt) offs.push(target.onChatEvent ? target.onChatEvent(evt, fn) : target.onThreadEvent(evt, fn)); };
+  const onThread = (evt, fn) => evt && offs.push(thread.onThreadEvent(evt, fn));
+
+  onThread(E.MESSAGE_SENT, (e) => { const m = e.detail?.data?.message; if (m) upsertMessage(m, { pending: false }); });
+  onThread(E.MESSAGE_CREATED, (e) => {
+    const m = e.detail?.data?.message;
+    if (!m) return;
+    log(`MESSAGE_CREATED (${m.messageContent?.type}, ${m.direction})`, m.messageContent);
+    if (m.direction !== 'inbound') showTyping(false);
+    upsertMessage(m);
+  });
+
+  const stream = (status) => (e) => {
+    const d = e.detail?.data;
+    if (!d?.originalMessage) return;
+    const msg = { ...d.originalMessage, idOnExternalPlatform: d.messageId, _stream: d.fullContent || '',
+                  messageContent: { type: 'TEXT', payload: { text: d.fullContent || '' } } };
+    upsertMessage(msg);
+    if (status === 'failed') systemLine('The reply was interrupted');
+  };
+  onThread(E.STREAMED_MESSAGE_STARTED, stream('streaming'));
+  onThread(E.STREAMED_MESSAGE_DELTA, stream('streaming'));
+  onThread(E.STREAMED_MESSAGE_COMPLETED, stream('done'));
+  onThread(E.STREAMED_MESSAGE_FAILED, stream('failed'));
+
+  on(sdk, E.AGENT_TYPING_STARTED, () => showTyping(true));
+  on(sdk, E.AGENT_TYPING_ENDED, () => showTyping(false));
+  on(sdk, E.ASSIGNED_AGENT_CHANGED, (e) => {
+    const a = e.detail?.data?.inboxAssignee;
+    if (a) systemLine(`You are now chatting with ${a.nickname || [a.firstName, a.surname].filter(Boolean).join(' ')}`);
+  });
+  on(sdk, E.SET_POSITION_IN_QUEUE, (e) => {
+    const pos = e.detail?.data?.positionInQueue ?? e.detail?.data?.position;
+    if (pos != null) setStatus(`You are number ${pos} in the queue`, 'Waiting', 'yellow');
+  });
+  on(sdk, E.CONTACT_STATUS_CHANGED, (e) => {
+    const status = e.detail?.data?.case?.status;
+    log('contact status', status);
+    if (status === 'closed' && cfg.livechat) { systemLine('Chat ended'); setChatState('closed'); }
+  });
+}
+
+/* ---------- Offline demo (exercises the same renderer) ---------- */
+function makeDemoXAppUrl() {
+  const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width"><style>
+    body{font-family:arial,sans-serif;margin:20px;color:#0b0c0c}label{display:block;font-weight:700;margin:15px 0 5px}
+    input{font-size:19px;border:2px solid #0b0c0c;padding:5px;width:100%;max-width:320px}
+    button{font-size:19px;background:#00703c;color:#fff;border:0;box-shadow:0 2px 0 #002d18;padding:8px 12px;margin-top:20px;cursor:pointer}
+  </style></head><body><h1>Demo xApp</h1><p>In a real test this panel shows the Cognigy xApp session page.</p>
+  <label for="r">Reference number</label><input id="r"><button onclick="document.body.insertAdjacentHTML('beforeend','<p><strong>Submitted.</strong></p>')">Continue</button></body></html>`;
+  return URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+}
+const demoCard = {
+  type: 'AdaptiveCard', $schema: 'http://adaptivecards.io/schemas/adaptive-card.json', version: '1.5',
+  body: [
+    { type: 'TextBlock', text: 'Check your details', weight: 'Bolder', size: 'Large', wrap: true },
+    { type: 'TextBlock', text: 'This card came from Cognigy as an **Adaptive Card**.', wrap: true },
+    { type: 'Input.Text', id: 'fullName', label: 'Full name', isRequired: true, errorMessage: 'Enter your full name' },
+    { type: 'Input.ChoiceSet', id: 'income', label: 'Main source of income', style: 'expanded',
+      choices: [{ title: 'Self-employment', value: 'se' }, { title: 'Property', value: 'property' }, { title: 'Both', value: 'both' }] },
+    { type: 'Input.Date', id: 'start', label: 'Start date' },
+  ],
+  actions: [{ type: 'Action.Submit', title: 'Continue', data: { action: 'details_submitted' } },
+            { type: 'Action.OpenUrl', title: 'Guidance', url: 'https://www.gov.uk/guidance/use-making-tax-digital-for-income-tax' }],
+};
+const DEMO = {
+  help: { type: 'QUICK_REPLIES', payload: { text: { content: 'Hello, I am a demo bot. What do you want to test?' },
+    actions: ['Adaptive Card', 'xApp', 'List picker', 'Rich link', 'Cognigy plugin payload'].map((t) => ({ type: 'REPLY_BUTTON', text: t, postback: t.toLowerCase() })) } },
+  card: { type: 'ADAPTIVE_CARD', payload: demoCard },
+  xapp: () => { const u = makeDemoXAppUrl(); return { type: 'TEXT', payload: { text: `Please complete the form in the xApp: ${u}` }, _forceXApp: u }; },
+  list: { type: 'LIST_PICKER', payload: { title: { content: 'Choose a topic' }, text: { content: 'Select one option' },
+    actions: [{ type: 'LIST_PICKER', text: 'Registering', postback: 'register', description: 'Sign up' }, { type: 'LIST_PICKER', text: 'Quarterly updates', postback: 'quarterly' }] } },
+  link: { type: 'RICH_LINK', payload: { url: 'https://www.gov.uk', title: { content: 'GOV.UK' }, media: { url: '', fileName: '', mimeType: '' } } },
+  plugin: { type: 'PLUGIN', payload: { _cognigy: { _default: { _adaptiveCard: { type: 'adaptiveCard', adaptiveCard: demoCard } } } }, fallbackText: '' },
+};
+function demoReply(text) {
+  const t = String(text).toLowerCase();
+  let c;
+  if (t.includes('plugin') || t.includes('cognigy')) c = DEMO.plugin;
+  else if (t.includes('card')) c = DEMO.card;
+  else if (t.includes('xapp')) c = DEMO.xapp();
+  else if (t.includes('list')) c = DEMO.list;
+  else if (t.includes('link')) c = DEMO.link;
+  else if (t.startsWith('{')) c = { type: 'TEXT', payload: { text: `Received data: ${text}` } };
+  else c = DEMO.help;
+  showTyping(true);
+  setTimeout(() => {
+    showTyping(false);
+    if (c._forceXApp) { const old = cfg.xappPattern; cfg.xappPattern = c._forceXApp.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); deliver(c); cfg.xappPattern = old; }
+    else deliver(c);
+  }, 700);
+  function deliver(content) {
+    const m = { id: crypto.randomUUID(), direction: 'outbound', authorUser: null, messageContent: content, createdAt: new Date().toISOString() };
+    log(`[demo] MESSAGE_CREATED (${content.type})`, content);
+    upsertMessage(m);
+  }
+}
+function startDemo() {
+  teardown();
+  mode = 'demo';
+  banner('');
+  if (!$('demo-tag')) $('page-title').insertAdjacentHTML('beforeend', ' <strong class="govuk-tag govuk-tag--orange demo-tag" id="demo-tag">Demo</strong>');
+  thread = {
+    async startChat() { setTimeout(() => demoReply('help'), 300); },
+    async endChat() {},
+    async sendTextMessage(text, o) { upsertMessage({ idOnExternalPlatform: o?.messageId, direction: 'inbound' }); demoReply(text); },
+    async sendPostbackMessage(pb, text, o) { upsertMessage({ idOnExternalPlatform: o?.messageId, direction: 'inbound' }); demoReply(pb); },
+    keystroke() {},
+  };
+  setChatState('new');
+}
+
+function teardown() {
+  offs.splice(0).forEach((f) => { try { f(); } catch {} });
+  try { sdk?.disconnect?.(); } catch {}
+  sdk = null; thread = null;
+  rendered.clear();
+  transcript.innerHTML = '';
+  showTyping(false);
+  $('xapp').hidden = true;
+}
+
+/* =====================================================================
+   Wiring
+   ===================================================================== */
+$('btn-start').addEventListener('click', async () => {
+  if (chatState === 'closed' && mode === 'live') {           // livechat: new session needs a new thread
+    LS.del(threadKey());
+    await connectLive();
+    if (chatState !== 'new') return;
+  }
+  if (chatState === 'closed' && mode === 'demo') { startDemo(); }
+  $('btn-start').disabled = true;
+  try {
+    setStatus('Starting chat…', 'Connecting', 'yellow');
+    if (thread.startChat) await thread.startChat();
+    setChatState('open');
+    systemLine('Chat started');
+    const fields = parseJsonField(cfg.contactFields, 'Contact custom fields');
+    if (fields && mode === 'live') { try { await thread.setCustomFields(fields); log('contact custom fields set', fields); } catch (e) { log('setCustomFields failed', String(e)); } }
+    input.focus();
+  } catch (e) {
+    log('startChat failed', String(e));
+    banner(`Could not start the chat: ${e.message || e}`);
+    setStatus('Could not start chat', 'Error', 'red');
+  } finally { $('btn-start').disabled = false; }
+});
+
+$('btn-end').addEventListener('click', async (e) => {
+  e.preventDefault();
+  try { await thread?.endChat?.(); } catch (err) { log('endChat failed', String(err)); }
+  systemLine('You ended the chat');
+  setChatState('closed');
+});
+
+$('composer').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) { input.focus(); return; }
+  input.value = '';
+  await sendText(text);
+  input.focus();
+});
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('composer').requestSubmit(); return; }
+  try { thread?.keystroke?.(); } catch {}
+});
+
+$('attach').addEventListener('change', async (e) => {
+  const files = e.target.files;
+  if (!files?.length || !thread?.sendAttachments) return;
+  try { await thread.sendAttachments(files); log('attachments sent', [...files].map((f) => f.name)); }
+  catch (err) { banner(`Attachment not sent: ${err.message || err}`); }
+  e.target.value = '';
+});
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  cfg = readForm();
+  LS.set(CFG_KEY, JSON.stringify(cfg));
+  fillForm();
+  $('settings').open = false;
+  connectLive();
+});
+$('btn-new-session').addEventListener('click', () => {
+  cfg = readForm();
+  LS.set(CFG_KEY, JSON.stringify(cfg));
+  LS.del(threadKey()); LS.del(customerKey());
+  log('session reset – new customer and thread IDs');
+  connectLive();
+});
+$('btn-demo').addEventListener('click', () => { cfg = readForm(); fillForm(); $('settings').open = false; startDemo(); });
+
+$('log-clear').addEventListener('click', () => (logEl.textContent = ''));
+$('log-copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(logEl.textContent); $('log-copy').textContent = 'Copied'; setTimeout(() => ($('log-copy').textContent = 'Copy log'), 1500); } catch {}
+});
+
+// Boot
+if (!AC) log('adaptivecards library did not load – cards will show as raw JSON');
+if (new URLSearchParams(location.search).has('demo')) startDemo();
+else connectLive();
+</script>
+</body>
+</html>
